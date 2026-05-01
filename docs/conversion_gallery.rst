@@ -43,6 +43,20 @@ A typical ``dataset_description.json`` file might look like:
 
 
 
+Citation
+--------
+
+When sufficient citation metadata can be derived from ``dataset_description`` or from a remote DANDI dandiset,
+**nwb2bids** also writes a ``CITATION.cff`` file at the root of the BIDS dataset. ``CITATION.cff`` is the
+`Citation File Format <https://citation-file-format.github.io/>`_ adopted by the BIDS specification for
+citation metadata. The file is skipped when neither a dataset title nor any authors are available.
+
+When converting from a DANDI dandiset, the citation file is enriched with additional fields that are not part
+of ``dataset_description.json`` (such as ``doi``, ``date-released``, ``keywords``, ``repository``, and entries
+under ``references`` derived from related resources).
+
+
+
 Subjects & Sessions
 -------------------
 

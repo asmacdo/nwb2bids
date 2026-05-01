@@ -1,9 +1,11 @@
 import collections
 import json
 import traceback
+import typing
 
 import pandas
 import pydantic
+import ruamel.yaml
 import typing_extensions
 from tqdm import tqdm
 
@@ -11,7 +13,7 @@ from ._dandi_utils import get_bids_dataset_description
 from ._run_config import RunConfig
 from ._session_converter import SessionConverter
 from .._converters._base_converter import BaseConverter
-from ..bids_models import BidsSessionMetadata, DatasetDescription
+from ..bids_models import BidsSessionMetadata, CffAuthor, CitationCff, DatasetDescription
 from ..notifications import Notification
 
 
@@ -21,6 +23,14 @@ class DatasetConverter(BaseConverter):
     )
     dataset_description: DatasetDescription | None = pydantic.Field(
         description="The BIDS-compatible dataset description.",
+        default=None,
+    )
+    citation_cff: CitationCff | None = pydantic.Field(
+        description=(
+            "Pre-built CITATION.cff metadata. Populated by `from_remote_dandiset` when DANDI metadata "
+            "provides DOI/keywords/etc. that are not representable in `dataset_description`. "
+            "When None, `write_citation_cff` derives the citation from `dataset_description`."
+        ),
         default=None,
     )
 
@@ -101,7 +111,7 @@ class DatasetConverter(BaseConverter):
 
             client = dandi.dandiapi.DandiAPIClient(api_url=api_url, token=token)
             dandiset = client.get_dandiset(dandiset_id=dandiset_id, version_id=version_id)
-            dataset_description, _internal_notifications = get_bids_dataset_description(dandiset=dandiset)
+            dataset_description, citation_cff, _internal_notifications = get_bids_dataset_description(dandiset=dandiset)
 
             if limit is None:
                 assets = list(dandiset.get_assets())
@@ -135,7 +145,10 @@ class DatasetConverter(BaseConverter):
             ]
 
             dataset_converter = cls(
-                session_converters=session_converters, dataset_description=dataset_description, run_config=run_config
+                session_converters=session_converters,
+                dataset_description=dataset_description,
+                citation_cff=citation_cff,
+                run_config=run_config,
             )
             dataset_converter._internal_notifications = _internal_notifications
             return dataset_converter
@@ -298,6 +311,7 @@ class DatasetConverter(BaseConverter):
             self.write_participants_metadata()
             self.write_sessions_metadata()
             self.write_dataset_description()
+            self.write_citation_cff()
             self.write_bidsignore()
         except Exception:  # noqa
             notification = Notification.from_definition(
@@ -337,6 +351,53 @@ class DatasetConverter(BaseConverter):
         dataset_description_file_path = self.run_config.bids_directory / "dataset_description.json"
         with dataset_description_file_path.open(mode="w") as file_stream:
             json.dump(obj=dataset_description_dictionary, fp=file_stream, indent=4)
+
+    def write_citation_cff(self) -> None:
+        """
+        Write the `CITATION.cff` file describing the BIDS dataset.
+
+        Prefers `self.citation_cff` (populated by `from_remote_dandiset` with enriched DANDI fields)
+        when present. Otherwise constructs a minimal citation from `self.dataset_description`.
+        Skips writing when neither title nor authors can be derived.
+        """
+        citation_cff = self.citation_cff
+        if citation_cff is None:
+            citation_cff = self._build_citation_cff_from_dataset_description()
+        if citation_cff is None:
+            return
+
+        citation_cff_dictionary = citation_cff.model_dump(by_alias=True, exclude_none=True)
+        citation_cff_file_path = self.run_config.bids_directory / "CITATION.cff"
+        yaml = ruamel.yaml.YAML()
+        yaml.default_flow_style = False
+        with citation_cff_file_path.open(mode="w") as file_stream:
+            yaml.dump(data=citation_cff_dictionary, stream=file_stream)
+
+    def _build_citation_cff_from_dataset_description(self) -> CitationCff | None:
+        """Construct a `CitationCff` from `self.dataset_description` for the local-source path."""
+        dataset_description = self.dataset_description
+        if dataset_description is None:
+            return None
+
+        title = dataset_description.Name
+        author_names = dataset_description.Authors or []
+        if title is None and not author_names:
+            return None
+
+        authors = [CffAuthor.from_dandi_name(dandi_name=name) for name in author_names]
+        if not authors:
+            return None
+
+        citation_cff_kwargs: dict[str, typing.Any] = {
+            "title": title if title is not None else "Untitled BIDS dataset",
+            "authors": authors,
+        }
+        if dataset_description.Description is not None:
+            citation_cff_kwargs["abstract"] = dataset_description.Description
+        if dataset_description.License is not None:
+            citation_cff_kwargs["license"] = dataset_description.License
+
+        return CitationCff(**citation_cff_kwargs)
 
     def write_participants_metadata(self) -> None:
         """Write the `participants.tsv` and `participants.json` files."""

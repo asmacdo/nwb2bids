@@ -1,4 +1,5 @@
 from ._bids_session_metadata import BidsSessionMetadata, Participant
+from ._citation_cff import CffAuthor, CitationCff
 from ._coordinate_system import write_coordsystem_json
 from ._dataset_description import DatasetDescription
 from ._probes import ProbeTable, Probe
@@ -8,8 +9,10 @@ from ._general_metadata import GeneralMetadata
 
 __all__ = [
     "BidsSessionMetadata",
+    "CffAuthor",
     "Channel",
     "ChannelTable",
+    "CitationCff",
     "DatasetDescription",
     "Electrode",
     "ElectrodeTable",

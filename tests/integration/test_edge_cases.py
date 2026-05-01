@@ -32,7 +32,7 @@ def test_convert_nwb_dataset_with_additional_metadata(
     expected_structure = {
         temporary_bids_directory: {
             "directories": {"sub-123"},
-            "files": {"participants.json", "participants.tsv", "dataset_description.json"},
+            "files": {"CITATION.cff", "participants.json", "participants.tsv", "dataset_description.json"},
         },
         temporary_bids_directory
         / "sub-123": {
